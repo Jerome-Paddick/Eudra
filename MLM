@@ -1,0 +1,332 @@
+from selenium import webdriver  # Website Automation
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import InvalidElementStateException
+from pywinauto import ElementNotFoundError
+
+import openpyxl, os, pprint, datetime, sys, pywinauto, time, win32api
+
+# "S:\LITERATURE DOCUMENTATION\EMA MLM\MLM Spreadsheet.xlsx"
+
+print("Please Close any open automation browsers before continuing")
+DAT = datetime.datetime.now()
+yDAT = DAT - datetime.timedelta(days=1)
+asdf = datetime.datetime.strftime(DAT, "L2A Request %d %b %Y SPL")
+chrome_options = webdriver.ChromeOptions()
+chrome_options.add_argument("--incognito")
+chrome_options.add_argument("user-data-dir=Cookie_Eudra")
+os.chdir(os.path.dirname(sys.argv[0]))
+before = os.listdir("TempDownload")
+PATH = "TempDownload"
+mlmPath = "S:\\LITERATURE DOCUMENTATION\\EMA MLM\\MLM Spreadsheet.xlsx"
+
+jsonPath = os.path.join(os.path.dirname(sys.argv[0]),"JSON.json")
+# print(jsonPath)
+# print(os.path.dirname(sys.argv[0]))
+print(sys.argv[0])
+
+def newest(path):
+    files = os.listdir(path)
+    if len(files) == 0:
+        return ""
+    else:
+        paths = [os.path.join(path, basename) for basename in files]
+        return max(paths, key=os.path.getctime)
+
+
+def companyname(name):
+    global USERN
+    global PASS
+    global Company
+    if name.lower() == "martindale" or name.lower() == "mrt":
+        Company = "Martindale"
+        print(Company)
+        USERN = ""
+        PASS = ""
+    elif name.lower() == "neurim" or name.lower() == "neu":
+        Company = "Neurim"
+        print(Company)
+        USERN = ""
+        PASS = ""
+    elif name.lower() == "setup":
+        driver = webdriver.Chrome(chrome_options=chrome_options)
+        driver.get("chrome://settings/downloads")
+        input("asdf")
+        sys.exit()
+    else:
+        print("no company found, please try again")
+        sys.exit()
+
+
+def downloadNewTracker():
+    chrome_options.add_argument("--window-size=250,250")
+    driver = webdriver.Chrome(chrome_options=chrome_options)
+    wait = WebDriverWait(driver, 15)
+    url = "eudravigilance.ema.europa.eu/human/restricted/PublicView/list2.asp"
+    driver.get("https://" + USERN + ":" + PASS + "@" + url)
+    driver.find_element(By.LINK_TEXT, "MLM ICSRs").click()
+    time.sleep(3)
+    for x in range(10):
+        after = os.listdir("TempDownload")
+        change = set(after) - set(before)
+        if len(change) == 1 and newest("TempDownload").find(".crdownload") == -1:
+            break
+        time.sleep(1)
+    print(len(change))
+    print("Download Complete")
+    driver.quit();
+    with open("LDown.txt", "w") as LD:
+        LD.write(str(datetime.datetime.now()))
+
+
+def jsonUpload(iteration):
+    app = pywinauto.application.Application()
+    mouseXpos, mouseYpos = win32api.GetCursorPos()
+    for x in range(20):
+        try:
+            app.connect(title=u'Open')[0]
+            window = app.window(title=u'Open')
+            # print(window.PrintControlIdentifiers)
+            break
+        except:
+            pass
+    ctrl = window["Edit"]
+    a = jsonPath
+    a = a.replace("/", "\\")
+    for x in range(len(a)):
+        ctrl.TypeKeys("{" + a[x] + "}")
+    ctrl.TypeKeys("{ENTER}")
+    win32api.SetCursorPos((mouseXpos, mouseYpos))
+    # for x in range(30):
+    #     try:
+    #         test = window['&Open']
+    #         test.Click()
+    #         time.sleep(0.2)
+    #         print(x)
+    #     except ElementNotFoundError:
+    #         break
+
+
+def genInfo(row):
+    global tmD, WWID, recD
+    recD = (sheet.cell(row=row, column=19).value)  # recieved date, col-S
+    # # if str(recD).find("datetime.datetime") > -1:
+    # recD = eval(recD)
+    tmD = (sheet.cell(row=row, column=21).value)  # transmission date, col-U
+    # # if str(tmD).find("datetime.datetime") > -1:
+    # tmD = eval(tmD)
+    WWID = sheet.cell(row=row, column=17).value[0:32]  # WWID, col-Q
+
+
+companyname(input("Please Choose Company: "))
+
+FILES = os.listdir(PATH)
+FILES = [os.path.join("TempDownload",f) for f in FILES]
+FILES.sort(key=lambda x: os.path.getmtime(x))
+FILES = [os.path.basename(f).replace(".xlsx","") for f in FILES]
+with open("LDown.txt", "r") as LD:
+    a = ((LD.read()))
+LDate = (datetime.datetime.strptime(a[0:10],"%Y-%m-%d"))
+LTime = (datetime.datetime.strptime(a[0:19],"%Y-%m-%d %H:%M:%S"))
+DDelta = datetime.datetime.now() - LDate
+TDelta = (datetime.datetime.now() - LTime)
+print("Time Since Last Download:", str(TDelta)[0:8])
+
+if len(FILES) == 0 or DDelta > datetime.timedelta(days=1):
+    downloadNewTracker()
+else:
+    FILEDAT = datetime.datetime.strptime(FILES[len(FILES)-1][0:19],"sum_icsr_%Y_%m_%d",)
+    if FILEDAT.date() == yDAT.date() and TDelta > datetime.timedelta(hours=4):
+        downL = input("The Latest ICSR Download is Dated Yesterday, Download a new one: ").lower()
+        if downL == "y" or downL == "yes":
+            downloadNewTracker()
+
+print("Starting MLM Comparrison...")
+# ReadFiles and compare to MLM#######
+book = openpyxl.load_workbook(newest(PATH))
+sheet = book.active
+LR = sheet.max_row
+
+xlMLM = openpyxl.load_workbook(mlmPath)
+clientSheet = xlMLM["Products"]
+clientLC = clientSheet.max_column
+# print(clientLC)
+clientPage = xlMLM[Company]
+ClientPageLR = clientPage.max_row
+
+# Find List of company products,
+for y in range(1, clientLC + 1):
+    # print(clientSheet.cell(row=1,column = y).value)
+    if clientSheet.cell(row=1,column = y).value is not None:
+        if clientSheet.cell(row=1,column = y).value.find(Company) > -1:
+            clientCol = y
+            # print(Company)
+            x = 3
+            cltProd = []
+            for x in range(3,100):
+                a = clientSheet.cell(row=x, column = y).value
+                if a is None:
+                    break
+                cltProd.append(a.replace("-",""))
+            print("Company List of products:  ", cltProd, "\n")
+
+# cltProd = ['Lidocaine']
+Rowtime = []
+for x in range(4, ClientPageLR+1):
+    a = clientPage.cell(row=x, column=1).value
+    P = 1
+    if type(a) is not datetime.datetime:
+        while type(clientPage.cell(row=x-P, column=1).value) is not datetime.datetime:
+            P = P+1
+        a = clientPage.cell(row=x - P, column=1).value
+    b = clientPage.cell(row=x, column=3).value
+    if isinstance(a, datetime.date) is True and(datetime.datetime.now() - a) \
+            < datetime.timedelta(days = 30) and b != "N/A":
+        # Rowtime.append([x, a, b])
+        Rowtime.append(b)
+
+print("MLMS downloaded last 30 days:")
+pprint.pprint(Rowtime)
+
+# printing a str() of a datetime object gives 'YYYY-MM-DD HH:MM:SS'
+for x in range(1,20):
+    if sheet.cell(row=x,column=1).value == "Substance Group":
+        startRow = x
+        # print("Start Row:",startRow)
+        break
+
+recD, tmD, WWID, colA = [], [], [], []
+if sheet.cell(row=startRow, column=19).value == "Receive date" \
+        and sheet.cell(row=startRow, column=21).value == "Transmission date (EV)":
+    for y in range(len(cltProd)):
+        print(y + 1, "/", len(cltProd), cltProd[y])
+        for x in range(startRow,LR):
+            valA = sheet.cell(row=x, column=1)   # substance group, col-A
+            susP = sheet.cell(row=x, column=15)  #Suspect Cases, col-O
+            genInfo(x)
+            # print(valA.fill.start_color.index)
+            if cltProd[y].lower() == str(sheet.cell(row=x, column=1).value).lower() and len(WWID) > 10:
+                # if (str(recD).strip() != 0 or "") or (str(tmD).strip() != 0 or ""):
+                # colA.append([valA.coordinate, valA.value, WWID, valA.fill.start_color.index, recD, tmD])
+                colA.append([valA.coordinate, valA.value, WWID, valA.fill.start_color.index, recD])
+            if susP.value is not None:
+                SUSP = (susP.value.lower()).find(cltProd[y].lower())
+                if SUSP > -1 and len(WWID) > 10 :
+                    # THIS WILL FAIL if -> 1 instance of es"" or methyl"" before actual string
+                    if susP.value.lower()[SUSP - 2:SUSP] != "es" and susP.value.lower()[SUSP - 6:SUSP] != "methyl":
+                        # colA.append([susP.coordinate, cltProd[y], WWID, susP.fill.start_color.index, recD, tmD])
+                        colA.append([susP.coordinate, cltProd[y], WWID, susP.fill.start_color.index, recD])
+    print(sheet.cell(row=startRow, column=19).value,sheet.cell(row=startRow, column=21).value)
+else:
+    input("wrong column names")
+    sys.exit()
+
+# print("colA")
+# for x in colA:
+#     print(x[2], x[4])
+# print("\n")
+
+if len(colA) == 0:
+    input("No relevent cases with WWIDS found...")
+    sys.exit()
+
+WWIDS = []
+NOTWWIDS = {}
+for x in range(len(colA)):
+    a, b = colA[x][1].lower(), colA[x][4]
+    if colA[3] == "FFFFFF00":
+        print("", colA[x][2], "Marked for download")
+        WWIDS.append(colA[x][2, a, b])
+    else:
+        if any(y == colA[x][2] for y in Rowtime) is False:
+            WWIDS.append( [colA[x][2] , a, b ])
+            print("", colA[x][2], "Not Downloaded Recently")
+        else:
+            NOTWWIDS[colA[x][2]] = "Already Downloaded"
+
+pprint.pprint(NOTWWIDS)
+b = 0
+print("\n", len(WWIDS), "WWIDs")
+print(WWIDS)
+
+if len(WWIDS) == 0:
+    input("No Valid WWIDs Found")
+    sys.exit()
+
+chrome_options.add_argument("--window-size=1000,1000")
+driver = webdriver.Chrome(chrome_options=chrome_options)
+wait = WebDriverWait(driver, 15)
+
+for x in range(10):
+    try:
+        driver.get("https://eudravigilance-human.ema.europa.eu/#/icsrDownload")   # Open Chrome to Website
+        WebDriverWait(driver, 5).until(EC.frame_to_be_available_and_switch_to_it)
+        # username
+        wait.until(EC.element_to_be_clickable((By.ID, 'username')))
+        break
+    except TimeoutException:
+        print(str(x+1), "error in attempt, retrying...")
+        pass
+
+userID = driver.find_element(By.ID,'username')
+for x in range(len(USERN)):
+    userID.send_keys(USERN[x])
+#password
+wait.until(EC.element_to_be_clickable((By.ID, 'password')))
+time.sleep(0.5)
+userPass = driver.find_element(By.ID,'password')
+for y in range(len(PASS)):
+    userPass.send_keys(PASS[y])
+driver.find_element(By.XPATH,"//div[@class='form-group']/button[@type='submit']").click()
+driver.switch_to.default_content()
+# popup
+driver.find_element(By.CSS_SELECTOR,"ul > li > div > button").click()
+
+# with open("search-criteria.json","r+") as f:
+#     json_data = json.load(f)
+with open("search-criteria.json", "r+") as f:
+    jsonStr = f.read()
+
+
+print("")
+EnterASDF = 0
+print("When uploading the json file, the program will steal your mouse temporarily")
+while b <= len(WWIDS)-1:
+
+    print(str(b) + "/" + str(len(WWIDS)) + " WWIDs Entered")
+    input("Download File and then Press Enter key to continue: ")
+    # print(WWIDS[WWID[b]])
+    for x in range(20):
+        try:
+            driver.find_element(By.XPATH, "//span[@class='fa fa-upload']").click()
+            # .send_keys("C:\\Users\\jpaddick\\Desktop\\search-criteria.json")
+            break
+        except WebDriverException:
+            time.sleep(0.5)
+            pass
+    ADAT1 = jsonStr.replace("ADAT1", datetime.datetime.strftime(WWIDS[b][2], "%Y%m%d%H%M"))
+    ADAT2 = ADAT1.replace("ADAT2", datetime.datetime.strftime(WWIDS[b][2], "%Y/%m/%d"))
+    OUT = ADAT2.replace("WWID", WWIDS[b][0])
+    # print(OUT,"\n")
+    with open("JSON.json", "w") as f:
+        f.write(OUT)
+    jsonUpload(b)
+    if x == 0:
+        time.sleep(1.5)
+    b = b + 1
+    driver.find_element(By.XPATH,"//button[@class='btn btn-default']").click()
+    time.sleep(0.5)
+    if EnterASDF == 0:
+        try:
+            driver.find_element(By.XPATH, "//section/bulk-export-actions/div/div[1]/input").clear()
+            driver.find_element(By.XPATH, "//section/bulk-export-actions/div/div[1]/input").send_keys(asdf)
+            EnterASDF = 1
+        except InvalidElementStateException:
+            print("No WWID Detected")
+print(str(b) + "/" + str(len(WWIDS)) + " WWIDs Entered")
+
+input("Press Any Key to Continue")
